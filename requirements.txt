@@ -1,0 +1,28 @@
+# Core dependencies
+numpy>=1.21.0
+scipy>=1.7.0
+
+# RTL-SDR support
+pyrtlsdr>=0.2.93
+
+# Signal processing
+pyfftw>=0.12.0  # Hardware-accelerated FFT
+
+# WebSDR dependencies
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Data handling (for legacy h1_receiver.py)
+h5py>=3.0.0
+
+# Utilities
+pyyaml>=5.4.0
+click>=8.0.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+black>=22.0.0
+flake8>=4.0.0

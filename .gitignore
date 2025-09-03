@@ -1,0 +1,115 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# GNU Radio
+*.pyc
+*.pyo
+top_block.py
+*.grc.bak
+*.grc~
+
+# Data files
+data/raw/*.dat
+data/raw/*.bin
+data/raw/*.raw
+data/processed/*.npy
+data/processed/*.csv
+data/processed/*.h5
+data/processed/*.fits
+
+# Calibration files (keep templates)
+data/calibration/*.cal
+!data/calibration/*.template
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Documentation
+docs/_build/
+docs/api/
+
+# Test coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# RTL-SDR specific
+*.iq
+*.cf32
+*.fc32
+rtl_*.txt
+
+# Log files
+*.log
+logs/
+*.out
+*.err
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# Configuration (keep templates)
+config/*.conf
+config/*.yaml
+!config/*.template
+!config/*.example
+
+# OS specific
+Thumbs.db
+.directory
+
+# Project specific
+captures/
+recordings/
+*.waterfall
+*.spectrum

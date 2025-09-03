@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H1SDR WebSDR - Multi-band Software Defined Radio</title>
+    
+    <!-- Favicon and PWA manifest -->
+    <link rel="icon" type="image/x-icon" href="/static/static/favicon.ico">
+    <link rel="manifest" href="/static/static/manifest.json">
+    <meta name="theme-color" content="#1a1a2e">
+    
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/spectrum.css">
+    <link rel="stylesheet" href="/static/css/controls.css">
+    <link rel="stylesheet" href="/static/css/themes.css">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="/static/js/init.js" as="script">
+</head>
+<body class="theme-dark">
+    <div id="app">
+        <!-- Header with main controls -->
+        <header class="control-header">
+            <div class="header-top">
+                <div class="logo-section">
+                    <h1>H1SDR WebSDR</h1>
+                    <div class="status-indicators">
+                        <span id="sdr-status" class="status-indicator offline">RTL-SDR: Offline</span>
+                        <span id="connection-status" class="status-indicator connecting">Connecting...</span>
+                    </div>
+                </div>
+                
+                <div class="control-actions">
+                    <button id="sdr-start" class="btn btn-primary">Start SDR</button>
+                    <button id="sdr-stop" class="btn btn-secondary" disabled>Stop SDR</button>
+                    <button id="theme-toggle" class="btn btn-icon" title="Toggle Theme">🌙</button>
+                    <button id="fullscreen-toggle" class="btn btn-icon" title="Fullscreen">⛶</button>
+                </div>
+            </div>
+            
+            <div class="header-controls">
+                <!-- Frequency Control Section -->
+                <div class="control-group frequency-control">
+                    <h3>Frequency Control</h3>
+                    <div class="frequency-input-group">
+                        <label for="frequency-input">Frequency (MHz):</label>
+                        <input type="number" id="frequency-input" 
+                               value="100.0000" step="0.0001" min="24" max="1766"
+                               class="frequency-input">
+                        <div class="frequency-buttons">
+                            <button class="freq-btn" data-step="-100000000">-100M</button>
+                            <button class="freq-btn" data-step="-10000000">-10M</button>
+                            <button class="freq-btn" data-step="-1000000">-1M</button>
+                            <button class="freq-btn" data-step="-100000">-100k</button>
+                            <button class="freq-btn" data-step="-10000">-10k</button>
+                            <button class="freq-btn" data-step="-1000">-1k</button>
+                            <button class="freq-btn" data-step="1000">+1k</button>
+                            <button class="freq-btn" data-step="10000">+10k</button>
+                            <button class="freq-btn" data-step="100000">+100k</button>
+                            <button class="freq-btn" data-step="1000000">+1M</button>
+                            <button class="freq-btn" data-step="10000000">+10M</button>
+                            <button class="freq-btn" data-step="100000000">+100M</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Band Selection -->
+                <div class="control-group band-control">
+                    <h3>Band Selection</h3>
+                    <div class="band-selector">
+                        <select id="band-select">
+                            <option value="">Select Band...</option>
+                            <!-- Radio Astronomy -->
+                            <optgroup label="Radio Astronomy">
+                                <option value="h1_line">H1 Line (1420.4 MHz)</option>
+                                <option value="oh_1665">OH Line 1665 MHz</option>
+                                <option value="oh_1667">OH Line 1667 MHz</option>
+                            </optgroup>
+                            <!-- Broadcast -->
+                            <optgroup label="Broadcast">
+                                <option value="fm_broadcast">FM Broadcast (88-108 MHz)</option>
+                            </optgroup>
+                            <!-- Amateur Radio HF (RTL-SDR Compatible) -->
+                            <optgroup label="Amateur Radio - HF">
+                                <option value="12m_band">12m Band (24.89-24.99 MHz)</option>
+                                <option value="10m_band">10m Band (28.0-29.7 MHz)</option>
+                            </optgroup>
+                            <!-- Amateur Radio VHF/UHF -->
+                            <optgroup label="Amateur Radio - VHF/UHF">
+                                <option value="6m_band">6m Band (50-54 MHz)</option>
+                                <option value="2m_band">2m Band (144-148 MHz)</option>
+                                <option value="70cm_band">70cm Band (420-450 MHz)</option>
+                            </optgroup>
+                            <!-- Utilities -->
+                            <optgroup label="Utilities">
+                                <option value="aviation">Aviation (118-137 MHz)</option>
+                                <option value="marine">Marine VHF (156-162 MHz)</option>
+                                <option value="weather_satellite">Weather Satellite (137-138 MHz)</option>
+                            </optgroup>
+                            <!-- ISM Bands -->
+                            <optgroup label="ISM Bands">
+                                <option value="ism_433">ISM 433 MHz</option>
+                                <option value="ism_868">ISM 868 MHz</option>
+                                <option value="ism_915">ISM 915 MHz</option>
+                            </optgroup>
+                        </select>
+                        <button id="tune-to-band" class="btn btn-primary">Tune to Band</button>
+                    </div>
+                </div>
+                
+                <!-- Demodulation Controls -->
+                <div class="control-group demod-control">
+                    <h3>Demodulation</h3>
+                    <div class="demod-settings">
+                        <div class="mode-selector">
+                            <label for="mode-select">Mode:</label>
+                            <select id="mode-select">
+                                <option value="SPECTRUM">Spectrum Only</option>
+                                <option value="AM">AM</option>
+                                <option value="FM">FM</option>
+                                <option value="USB">USB</option>
+                                <option value="LSB">LSB</option>
+                                <option value="CW">CW</option>
+                            </select>
+                        </div>
+                        <div class="bandwidth-control">
+                            <label for="bandwidth-slider">Bandwidth:</label>
+                            <input type="range" id="bandwidth-slider" 
+                                   min="100" max="200000" value="15000" step="100">
+                            <span id="bandwidth-display">15.0 kHz</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- SDR Settings -->
+                <div class="control-group sdr-control">
+                    <h3>SDR Settings</h3>
+                    <div class="sdr-settings">
+                        <div class="gain-control">
+                            <label for="gain-slider">Gain (dB):</label>
+                            <input type="range" id="gain-slider" 
+                                   min="0" max="50" value="15" step="0.1">
+                            <span id="gain-display">15.0</span>
+                        </div>
+                        <div class="device-selector">
+                            <label for="device-select">Device:</label>
+                            <select id="device-select">
+                                <option value="0">RTL-SDR #0</option>
+                                <option value="1">RTL-SDR #1</option>
+                                <option value="2">RTL-SDR #2</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Resizable Layout Container -->
+        <div class="resizable-layout">
+            <!-- Horizontal Control Bar -->
+            <div class="horizontal-controls resizable-panel" id="controls-panel">
+                <!-- Hardware Controls -->
+            <div class="control-group hardware-group">
+                <h4>📡 Hardware</h4>
+                <div class="control-items">
+                    <div class="control-item">
+                        <label for="gain-slider">Gain:</label>
+                        <input type="range" id="gain-slider" min="0" max="50" value="15" step="0.1">
+                        <span id="gain-display">15.0 dB</span>
+                    </div>
+                    <div class="control-item">
+                        <label for="device-select">Device:</label>
+                        <select id="device-select">
+                            <option value="0">RTL-SDR #0</option>
+                            <option value="1">RTL-SDR #1</option>
+                            <option value="2">RTL-SDR #2</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Demodulation Controls -->
+            <div class="control-group demod-group">
+                <h4>📻 Demod</h4>
+                <div class="control-items">
+                    <div class="control-item">
+                        <label for="demod-select">Mode:</label>
+                        <select id="demod-select">
+                            <option value="SPECTRUM">Spectrum</option>
+                            <option value="AM">AM</option>
+                            <option value="FM" selected>FM</option>
+                            <option value="USB">USB</option>
+                            <option value="LSB">LSB</option>
+                            <option value="CW">CW</option>
+                        </select>
+                    </div>
+                    <div class="control-item">
+                        <label for="bandwidth-slider">BW:</label>
+                        <input type="range" id="bandwidth-slider" 
+                               min="100" max="200000" value="15000" step="100">
+                        <span id="bandwidth-display">15.0k</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Controls -->
+            <div class="control-group audio-group">
+                <h4>🔊 Audio</h4>
+                <div class="control-items">
+                    <div class="control-item">
+                        <label for="volume-slider">Vol:</label>
+                        <input type="range" id="volume-slider" 
+                               min="0" max="100" value="50" step="1">
+                        <span id="volume-display">50%</span>
+                    </div>
+                    <div class="control-item">
+                        <button id="audio-play" class="btn btn-sm btn-primary">▶</button>
+                        <button id="audio-stop" class="btn btn-sm btn-secondary">⏹</button>
+                        <button id="audio-mute" class="btn btn-sm btn-secondary">🔇</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Display Controls -->
+            <div class="control-group display-group">
+                <h4>📊 Display</h4>
+                <div class="control-items">
+                    <div class="control-item">
+                        <label for="intensity-min">Min (dB):</label>
+                        <input type="range" id="intensity-min" min="-100" max="0" value="-80" step="1">
+                        <span id="intensity-min-display">-80</span>
+                    </div>
+                    <div class="control-item">
+                        <label for="intensity-max">Max (dB):</label>
+                        <input type="range" id="intensity-max" min="-50" max="50" value="-10" step="1">
+                        <span id="intensity-max-display">-10</span>
+                    </div>
+                    <div class="control-item">
+                        <label for="spectrum-zoom">Zoom:</label>
+                        <input type="range" id="spectrum-zoom" min="1" max="20" value="1">
+                        <span id="zoom-display">1x</span>
+                    </div>
+                    <div class="control-item">
+                        <button id="reset-zoom" class="btn btn-sm btn-secondary">Reset</button>
+                        <button id="auto-scale" class="btn btn-sm btn-secondary">Auto</button>
+                    </div>
+                </div>
+            </div>
+            </div>
+
+            <!-- Resizable Divider -->
+            <div class="resize-divider" id="resize-divider">
+                <div class="resize-handle">
+                    <div class="resize-grip"></div>
+                </div>
+            </div>
+
+            <!-- Full Width Spectrum Display -->
+            <main class="spectrum-fullwidth resizable-panel" id="spectrum-panel">
+            <div class="spectrum-header">
+                <h2>Spectrum Analyzer</h2>
+                <div class="spectrum-info">
+                    <span id="cursor-frequency">Frequency: ---</span>
+                    <span id="cursor-power">Power: --- dB</span>
+                    <span id="spectrum-fps">FPS: --</span>
+                </div>
+            </div>
+            <div class="spectrum-container">
+                <canvas id="spectrum-canvas" width="1920" height="600"></canvas>
+            </div>
+            </main>
+        </div>
+            
+            <!-- Waterfall Display (DISABLED for performance) -->
+            <section class="waterfall-section" style="display: none;">
+                <div class="waterfall-header">
+                    <h2>Waterfall Display</h2>
+                    <div class="waterfall-controls">
+                        <div class="colormap-control">
+                            <label for="colormap-select">Colormap:</label>
+                            <select id="colormap-select">
+                                <option value="jet">Jet</option>
+                                <option value="viridis">Viridis</option>
+                                <option value="plasma">Plasma</option>
+                                <option value="cool">Cool</option>
+                                <option value="hot">Hot</option>
+                            </select>
+                        </div>
+                        <div class="intensity-control">
+                            <label for="intensity-min">Min:</label>
+                            <input type="range" id="intensity-min" min="-100" max="0" value="-80" step="1">
+                            <span id="intensity-min-display">-80</span>
+                            <label for="intensity-max">Max:</label>
+                            <input type="range" id="intensity-max" min="-50" max="50" value="-10" step="1">
+                            <span id="intensity-max-display">-10</span>
+                        </div>
+                        <button id="auto-scale" class="btn btn-secondary">Auto Scale</button>
+                    </div>
+                </div>
+                <div class="waterfall-container">
+                    <canvas id="waterfall-canvas" width="1200" height="400"></canvas>
+                </div>
+            </section>
+        </main>
+        
+        <!-- Audio and Status Footer -->
+        <footer class="control-footer">
+            <div class="audio-section">
+                <h3>Audio Control</h3>
+                <div class="audio-controls">
+                    <button id="audio-play" class="btn btn-primary" disabled>
+                        <span class="icon">▶</span> Play Audio
+                    </button>
+                    <button id="audio-stop" class="btn btn-secondary" disabled>
+                        <span class="icon">⏹</span> Stop
+                    </button>
+                    <div class="volume-control">
+                        <label for="volume-slider">Volume:</label>
+                        <input type="range" id="volume-slider" min="0" max="100" value="50" step="1">
+                        <span id="volume-display">50%</span>
+                    </div>
+                    <div class="squelch-control">
+                        <label for="squelch-slider">Squelch:</label>
+                        <input type="range" id="squelch-slider" min="0" max="100" value="0" step="1">
+                        <span id="squelch-display">Off</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-section">
+                <h3>Status</h3>
+                <div class="status-display">
+                    <div class="s-meter-container">
+                        <label>Signal Strength:</label>
+                        <div class="s-meter">
+                            <div class="s-meter-bar" id="s-meter-bar"></div>
+                            <div class="s-meter-scale">
+                                <span>S1</span><span>S3</span><span>S5</span><span>S7</span><span>S9</span><span>+20</span><span>+40</span><span>+60</span>
+                            </div>
+                        </div>
+                        <span id="s-meter-value">S0</span>
+                    </div>
+                    <div class="performance-info">
+                        <span id="cpu-usage">CPU: --%</span>
+                        <span id="memory-usage">RAM: -- MB</span>
+                        <span id="data-rate">Rate: -- kB/s</span>
+                        <span id="clients-count">Clients: --</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Initializing H1SDR WebSDR...</div>
+    </div>
+    
+    <!-- Error modal -->
+    <div id="error-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Error</h3>
+                <button class="modal-close" id="error-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="error-message">An error occurred.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="error-ok">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript modules -->
+    <script type="module" src="/static/js/config.js"></script>
+    <script type="module" src="/static/js/utils/frequency-utils.js"></script>
+    <script type="module" src="/static/js/utils/dsp-utils.js"></script>
+    <script type="module" src="/static/js/utils/performance-utils.js"></script>
+    <script type="module" src="/static/js/services/api-client.js"></script>
+    <script type="module" src="/static/js/services/websocket-client.js"></script>
+    <script type="module" src="/static/js/services/audio-service.js"></script>
+    <script type="module" src="/static/js/components/spectrum-display.js"></script>
+    <script type="module" src="/static/js/components/waterfall-display.js"></script>
+    <script type="module" src="/static/js/components/frequency-controller.js"></script>
+    <script type="module" src="/static/js/components/audio-player.js"></script>
+    <script type="module" src="/static/js/components/band-selector.js"></script>
+    <script type="module" src="/static/js/components/demod-controls.js"></script>
+    <!-- Consolidated initialization script -->
+    <script src="/static/js/init.js"></script>
+</body>
+</html>
