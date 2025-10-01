@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Audio Frontend</title>
+</head>
+<body>
+    <h1>Test WebSDR Audio Frontend</h1>
+    <button id="start-audio">Start Audio Test</button>
+    <button id="stop-audio">Stop Audio Test</button>
+    <div id="status">Status: Disconnected</div>
+    <div id="logs"></div>
+
+    <script>
+    let audioWs = null;
+    let spectrumWs = null;
+    let audioContext = null;
+    let gainNode = null;
+    let audioStartTime = 0;
+    let chunksReceived = 0;
+
+    function log(message) {
+        const logs = document.getElementById('logs');
+        const timestamp = new Date().toLocaleTimeString();
+        logs.innerHTML += `<div>${timestamp}: ${message}</div>`;
+        logs.scrollTop = logs.scrollHeight;
+        console.log(message);
+    }
+
+    async function initAudio() {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            gainNode = audioContext.createGain();
+            gainNode.connect(audioContext.destination);
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+            log('✅ AudioContext initialized');
+            return true;
+        } catch (error) {
+            log(`❌ AudioContext error: ${error.message}`);
+            return false;
+        }
+    }
+
+    function playAudioChunk(samples) {
+        if (!audioContext || !gainNode) {
+            log('❌ AudioContext not ready');
+            return;
+        }
+
+        try {
+            // Create buffer for the audio chunk
+            const buffer = audioContext.createBuffer(1, samples.length, 48000);
+            const channelData = buffer.getChannelData(0);
+
+            // Copy samples to buffer
+            for (let i = 0; i < samples.length; i++) {
+                channelData[i] = samples[i];
+            }
+
+            // Create and schedule source
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(gainNode);
+
+            // Play immediately
+            source.start(audioContext.currentTime);
+
+            log(`🔊 Played chunk: ${samples.length} samples`);
+        } catch (error) {
+            log(`❌ Audio playback error: ${error.message}`);
+        }
+    }
+
+    async function startAudioTest() {
+        document.getElementById('status').textContent = 'Status: Connecting...';
+
+        if (!await initAudio()) {
+            document.getElementById('status').textContent = 'Status: Audio Init Failed';
+            return;
+        }
+
+        try {
+            // Connect to spectrum (required for audio generation)
+            spectrumWs = new WebSocket('ws://localhost:8000/ws/spectrum');
+
+            spectrumWs.onopen = () => {
+                log('✅ Spectrum WebSocket connected');
+            };
+
+            // Connect to audio
+            audioWs = new WebSocket('ws://localhost:8000/ws/audio');
+
+            audioWs.onopen = () => {
+                log('✅ Audio WebSocket connected');
+                document.getElementById('status').textContent = 'Status: Connected';
+                audioStartTime = Date.now();
+                chunksReceived = 0;
+            };
+
+            audioWs.onmessage = (event) => {
+                try {
+                    const audioData = JSON.parse(event.data);
+
+                    if (audioData.type === 'audio' && audioData.samples) {
+                        chunksReceived++;
+                        const elapsed = (Date.now() - audioStartTime) / 1000;
+                        const rate = chunksReceived / elapsed;
+
+                        if (chunksReceived <= 10) {
+                            log(`🎵 Chunk ${chunksReceived}: ${audioData.samples.length} samples (rate: ${rate.toFixed(1)} Hz)`);
+                        }
+
+                        // Play the audio chunk immediately
+                        playAudioChunk(audioData.samples);
+
+                        if (chunksReceived === 10) {
+                            log(`📊 Summary: ${rate.toFixed(1)} chunks/sec, ${audioData.samples.length} samples each`);
+                        }
+                    } else if (audioData.type === 'connection_status') {
+                        log(`📡 Connection status: ${audioData.status}`);
+                    }
+                } catch (error) {
+                    log(`❌ Message processing error: ${error.message}`);
+                }
+            };
+
+            audioWs.onerror = (error) => {
+                log(`❌ Audio WebSocket error: ${error}`);
+            };
+
+            audioWs.onclose = () => {
+                log('🔌 Audio WebSocket disconnected');
+                document.getElementById('status').textContent = 'Status: Disconnected';
+            };
+
+        } catch (error) {
+            log(`❌ Connection error: ${error.message}`);
+            document.getElementById('status').textContent = 'Status: Connection Failed';
+        }
+    }
+
+    function stopAudioTest() {
+        if (audioWs) {
+            audioWs.close();
+            audioWs = null;
+        }
+        if (spectrumWs) {
+            spectrumWs.close();
+            spectrumWs = null;
+        }
+        if (audioContext) {
+            audioContext.close();
+            audioContext = null;
+        }
+
+        log('🛑 Audio test stopped');
+        document.getElementById('status').textContent = 'Status: Stopped';
+    }
+
+    // Event listeners
+    document.getElementById('start-audio').addEventListener('click', startAudioTest);
+    document.getElementById('stop-audio').addEventListener('click', stopAudioTest);
+
+    log('🚀 Audio test page loaded - click Start to begin');
+    </script>
+
+    <style>
+    body { font-family: monospace; margin: 20px; }
+    button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+    #logs {
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        height: 400px;
+        overflow-y: scroll;
+        background: #f5f5f5;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+    #status {
+        font-weight: bold;
+        margin: 10px 0;
+        color: #333;
+    }
+    </style>
+</body>
+</html>

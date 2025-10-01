@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Test - H1SDR</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: white;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .status {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .logs {
+            background: #000;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>H1SDR Audio Test</h1>
+    <div class="status">
+        <p>Connection: <span id="status">Disconnected</span></p>
+        <p>Audio Context: <span id="audio-status">Not started</span></p>
+        <p>Buffers received: <span id="buffer-count">0</span></p>
+        <p>Audio playing: <span id="audio-playing">No</span></p>
+        <p>Volume: <input type="range" id="volume" min="0" max="100" value="50"> <span id="volume-display">50%</span></p>
+    </div>
+
+    <button onclick="startAudioTest()">Start Audio Test</button>
+    <button onclick="stopAudioTest()">Stop Audio Test</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+
+    <div id="logs" class="logs">Ready to test...\n</div>
+
+    <script>
+        let audioContext = null;
+        let audioSocket = null;
+        let gainNode = null;
+        let bufferCount = 0;
+        let isPlaying = false;
+        let audioQueue = [];
+        let isProcessing = false;
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logs = document.getElementById('logs');
+            logs.textContent += `[${timestamp}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+            console.log(message);
+        }
+
+        function updateStatus(element, text) {
+            document.getElementById(element).textContent = text;
+        }
+
+        async function startAudioTest() {
+            try {
+                log('Starting audio test...');
+
+                // Initialize Web Audio API
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                gainNode = audioContext.createGain();
+                gainNode.connect(audioContext.destination);
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+                updateStatus('audio-status', 'Initialized');
+                log(`Audio context created: sampleRate=${audioContext.sampleRate}, state=${audioContext.state}`);
+
+                // Resume context if suspended (required by browser policy)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                    log('Audio context resumed');
+                }
+
+                // Connect to WebSocket
+                audioSocket = new WebSocket('ws://localhost:8000/ws/audio');
+
+                audioSocket.onopen = () => {
+                    log('WebSocket connected');
+                    updateStatus('status', 'Connected');
+                };
+
+                audioSocket.onmessage = async (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'audio') {
+                            bufferCount++;
+                            updateStatus('buffer-count', bufferCount);
+                            log(`Received audio buffer: ${data.samples.length} samples`);
+
+                            // Process audio data immediately
+                            await processAudioData(data.samples);
+                        }
+                    } catch (error) {
+                        log(`Error processing audio data: ${error.message}`);
+                    }
+                };
+
+                audioSocket.onclose = () => {
+                    log('WebSocket disconnected');
+                    updateStatus('status', 'Disconnected');
+                };
+
+                audioSocket.onerror = (error) => {
+                    log(`WebSocket error: ${error}`);
+                };
+
+                isPlaying = true;
+                updateStatus('audio-playing', 'Yes');
+                log('Audio test started successfully');
+
+            } catch (error) {
+                log(`Error starting audio test: ${error.message}`);
+            }
+        }
+
+        async function processAudioData(samples) {
+            if (!audioContext || !gainNode || audioContext.state !== 'running') {
+                log('Audio context not ready');
+                return;
+            }
+
+            try {
+                // Create audio buffer
+                const audioBuffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
+                const channelData = audioBuffer.getChannelData(0);
+
+                // Copy samples to buffer
+                for (let i = 0; i < samples.length; i++) {
+                    channelData[i] = samples[i];
+                }
+
+                // Create buffer source and play
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(gainNode);
+                source.start();
+
+                log(`Playing audio buffer: ${samples.length} samples at ${audioContext.currentTime.toFixed(3)}s`);
+
+            } catch (error) {
+                log(`Error processing audio: ${error.message}`);
+            }
+        }
+
+        function stopAudioTest() {
+            log('Stopping audio test...');
+
+            if (audioSocket) {
+                audioSocket.close();
+                audioSocket = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            isPlaying = false;
+            bufferCount = 0;
+            audioQueue = [];
+
+            updateStatus('status', 'Disconnected');
+            updateStatus('audio-status', 'Stopped');
+            updateStatus('buffer-count', '0');
+            updateStatus('audio-playing', 'No');
+
+            log('Audio test stopped');
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').textContent = 'Logs cleared...\n';
+        }
+
+        // Volume control
+        document.getElementById('volume').addEventListener('input', (e) => {
+            const volume = e.target.value / 100;
+            if (gainNode) {
+                gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+            }
+            document.getElementById('volume-display').textContent = `${e.target.value}%`;
+        });
+
+        // Auto-start test on page load (after user interaction)
+        document.addEventListener('click', () => {
+            if (!audioContext) {
+                log('Click detected - ready to start audio test');
+            }
+        }, { once: true });
+    </script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Reconnect Test - H1SDR v2.0</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #00ff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        .status-OPEN { background: #001a00; border-color: #00ff00; }
+        .status-CONNECTING { background: #1a1a00; border-color: #ffff00; }
+        .status-CLOSED { background: #1a0000; border-color: #ff0000; }
+        .status-error { background: #1a0000; border-color: #ff0000; }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        button {
+            background: #003300;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #004400;
+        }
+        button:disabled {
+            background: #1a1a1a;
+            color: #555;
+            border-color: #333;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        .log-info { color: #00ff00; }
+        .log-warn { color: #ffff00; }
+        .log-error { color: #ff0000; }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .metric {
+            background: #0a0a0a;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            color: #00ff00;
+            font-weight: bold;
+        }
+        .metric-label {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 WebSocket Auto-Reconnect Test</h1>
+
+    <div class="status" id="status">
+        <strong>Estado:</strong> <span id="status-text">DISCONNECTED</span><br>
+        <strong>Intentos:</strong> <span id="reconnect-attempts">0</span><br>
+        <strong>Cola de mensajes:</strong> <span id="queue-size">0</span>
+    </div>
+
+    <div class="metrics">
+        <div class="metric">
+            <div class="metric-value" id="messages-sent">0</div>
+            <div class="metric-label">Mensajes Enviados</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" id="messages-received">0</div>
+            <div class="metric-label">Mensajes Recibidos</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" id="uptime">0s</div>
+            <div class="metric-label">Tiempo Activo</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <h3>Controles de Prueba</h3>
+        <button id="btn-connect">Conectar</button>
+        <button id="btn-disconnect" disabled>Desconectar</button>
+        <button id="btn-send">Enviar Mensaje de Prueba</button>
+        <button id="btn-clear-log">Limpiar Log</button>
+        <p style="color: #888; font-size: 12px; margin-top: 10px;">
+            💡 Tip: Detén el servidor WebSDR y observa la reconexión automática
+        </p>
+    </div>
+
+    <div class="controls">
+        <h3>Criterios de Aceptación</h3>
+        <div id="acceptance-criteria">
+            <div>[ ] Backoff exponencial (1s → 30s max)</div>
+            <div>[ ] Cola de mensajes mientras desconectado</div>
+            <div>[ ] Auto-flush al reconectar</div>
+            <div>[ ] Sin intervención del usuario</div>
+        </div>
+    </div>
+
+    <h3>Log de Eventos</h3>
+    <div class="log" id="log"></div>
+
+    <script src="../../web/js/services/websocket-manager.js"></script>
+    <script>
+        let ws = null;
+        let messagesSent = 0;
+        let messagesReceived = 0;
+        let startTime = null;
+        let uptimeInterval = null;
+
+        const statusDiv = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+        const reconnectAttempts = document.getElementById('reconnect-attempts');
+        const queueSize = document.getElementById('queue-size');
+        const logDiv = document.getElementById('log');
+
+        function log(message, level = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${level}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus() {
+            if (!ws) {
+                statusDiv.className = 'status status-CLOSED';
+                statusText.textContent = 'DISCONNECTED';
+                return;
+            }
+
+            const state = ws.getState();
+            statusDiv.className = `status status-${state}`;
+            statusText.textContent = state;
+            reconnectAttempts.textContent = ws.reconnectAttempt;
+            queueSize.textContent = ws.messageQueue.length;
+        }
+
+        function updateMetrics() {
+            document.getElementById('messages-sent').textContent = messagesSent;
+            document.getElementById('messages-received').textContent = messagesReceived;
+        }
+
+        function updateUptime() {
+            if (startTime) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('uptime').textContent = `${elapsed}s`;
+            }
+        }
+
+        function connect() {
+            log('Iniciando conexión WebSocket...', 'info');
+
+            ws = new RobustWebSocket('ws://localhost:8000/ws', {
+                reconnectDelay: 1000,
+                maxDelay: 30000,
+                maxQueueSize: 100,
+
+                onOpen: (event) => {
+                    log('✓ WebSocket conectado', 'info');
+                    updateStatus();
+                    document.getElementById('btn-connect').disabled = true;
+                    document.getElementById('btn-disconnect').disabled = false;
+
+                    if (!startTime) {
+                        startTime = Date.now();
+                        uptimeInterval = setInterval(updateUptime, 1000);
+                    }
+                },
+
+                onClose: (event) => {
+                    log(`⚠ WebSocket desconectado (code: ${event.code})`, 'warn');
+                    updateStatus();
+                    document.getElementById('btn-connect').disabled = false;
+                    document.getElementById('btn-disconnect').disabled = true;
+                },
+
+                onError: (error) => {
+                    log(`✗ Error en WebSocket: ${error}`, 'error');
+                },
+
+                onMessage: (data) => {
+                    messagesReceived++;
+                    updateMetrics();
+                    log(`← Mensaje recibido: ${JSON.stringify(data).substring(0, 100)}`, 'info');
+                }
+            });
+
+            setInterval(updateStatus, 500);
+        }
+
+        function disconnect() {
+            if (ws) {
+                log('Desconectando WebSocket (manual)...', 'info');
+                ws.close();
+                ws = null;
+
+                if (uptimeInterval) {
+                    clearInterval(uptimeInterval);
+                    uptimeInterval = null;
+                }
+            }
+        }
+
+        function sendTestMessage() {
+            if (ws) {
+                const message = {
+                    type: 'test',
+                    timestamp: Date.now(),
+                    data: 'Test message from reconnect test'
+                };
+                ws.send(message);
+                messagesSent++;
+                updateMetrics();
+                log(`→ Mensaje enviado (queue: ${ws.messageQueue.length})`, 'info');
+            } else {
+                log('✗ No hay conexión WebSocket', 'error');
+            }
+        }
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+            log('Log limpiado', 'info');
+        }
+
+        // Event listeners
+        document.getElementById('btn-connect').addEventListener('click', connect);
+        document.getElementById('btn-disconnect').addEventListener('click', disconnect);
+        document.getElementById('btn-send').addEventListener('click', sendTestMessage);
+        document.getElementById('btn-clear-log').addEventListener('click', clearLog);
+
+        // Auto-connect on load
+        log('=== H1SDR v2.0 WebSocket Reconnect Test ===', 'info');
+        log('Esperando acción del usuario...', 'info');
+    </script>
+</body>
+</html>
