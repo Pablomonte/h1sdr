@@ -41,17 +41,16 @@ class SpectrumProcessor:
         self.overlap_samples = int(fft_size * overlap)
         self.overlap_buffer = np.zeros(self.overlap_samples, dtype=np.complex64)
         
-        # Performance optimization
+        # Performance optimization - use v2.0 FFTProcessor
         self.use_fftw = False
+        self.fft_processor = None
         try:
-            import pyfftw
-            self.fftw_input = pyfftw.empty_aligned(fft_size, dtype='complex64')
-            self.fftw_output = pyfftw.empty_aligned(fft_size, dtype='complex64')
-            self.fftw_object = pyfftw.FFTW(self.fftw_input, self.fftw_output)
+            from .fft_processor import FFTProcessor
+            self.fft_processor = FFTProcessor(fft_size=fft_size, enable_threading=True)
             self.use_fftw = True
-            logger.info("Using FFTW for accelerated FFT computation")
-        except ImportError:
-            logger.info("Using NumPy FFT (install pyfftw for better performance)")
+            logger.info("Using v2.0 FFTProcessor with multi-threaded FFTW")
+        except Exception as e:
+            logger.info(f"Using NumPy FFT (v2.0 FFTProcessor not available: {e})")
         
         # Smoothing and averaging
         self.enable_smoothing = True
@@ -96,15 +95,14 @@ class SpectrumProcessor:
             self.overlap_samples = int(fft_size * self.overlap)
             self.overlap_buffer = np.zeros(self.overlap_samples, dtype=np.complex64)
             
-            # Update FFTW objects if using
-            if self.use_fftw:
+            # Update FFT processor if using
+            if self.use_fftw and self.fft_processor:
                 try:
-                    import pyfftw
-                    self.fftw_input = pyfftw.empty_aligned(fft_size, dtype='complex64')
-                    self.fftw_output = pyfftw.empty_aligned(fft_size, dtype='complex64')
-                    self.fftw_object = pyfftw.FFTW(self.fftw_input, self.fftw_output)
-                except ImportError:
+                    from .fft_processor import FFTProcessor
+                    self.fft_processor = FFTProcessor(fft_size=fft_size, enable_threading=True)
+                except Exception:
                     self.use_fftw = False
+                    self.fft_processor = None
             updated = True
         
         if updated:
@@ -138,11 +136,9 @@ class SpectrumProcessor:
             # Apply window function
             windowed = samples * self.window
             
-            # Compute FFT
-            if self.use_fftw:
-                self.fftw_input[:] = windowed
-                self.fftw_object()
-                fft_result = self.fftw_output.copy()
+            # Compute FFT with v2.0 FFTProcessor (multi-threaded FFTW)
+            if self.use_fftw and self.fft_processor:
+                fft_result = self.fft_processor.process(windowed)
             else:
                 fft_result = np.fft.fft(windowed)
             
@@ -202,11 +198,9 @@ class SpectrumProcessor:
             # Apply window
             windowed = frame * self.window
             
-            # Compute FFT
-            if self.use_fftw:
-                self.fftw_input[:] = windowed
-                self.fftw_object()
-                fft_result = self.fftw_output.copy()
+            # Compute FFT with v2.0 FFTProcessor (multi-threaded FFTW)
+            if self.use_fftw and self.fft_processor:
+                fft_result = self.fft_processor.process(windowed)
             else:
                 fft_result = np.fft.fft(windowed)
             
