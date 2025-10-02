@@ -310,13 +310,18 @@ class WebSDRControllerV2:
         """
         Get latest spectrum data for WebSocket streaming
 
-        Uses v2.0 plugin supervisor for parallel processing
+        Uses v2.0 plugin supervisor for parallel processing with error handling
         """
         try:
             # Get data from queue (non-blocking)
             try:
                 samples = self.data_queue.get_nowait()
             except Empty:
+                return None
+
+            # Validate samples
+            if samples is None or len(samples) == 0:
+                logger.warning("Received empty samples from queue")
                 return None
 
             # Process with plugin supervisor
@@ -328,8 +333,16 @@ class WebSDRControllerV2:
                 'demod_config': self.demod_config.copy()
             }
 
-            # Run plugins with supervisor (parallel execution)
-            results = await self.plugin_supervisor.run_with_supervision(plugin_data)
+            # Run plugins with supervisor (parallel execution with error isolation)
+            try:
+                results = await self.plugin_supervisor.run_with_supervision(plugin_data)
+            except Exception as e:
+                error_handler.log_error(
+                    e,
+                    "Plugin supervisor execution",
+                    ErrorSeverity.ERROR
+                )
+                return None
 
             processing_time = time.time() - start_time
 
@@ -345,29 +358,45 @@ class WebSDRControllerV2:
                 if result.success and result.data.get('type') == 'spectrum':
                     spectrum_result = result.data
 
-                    # Build spectrum data response
-                    spectrum_data = {
-                        'type': 'spectrum',
-                        'frequencies': spectrum_result['frequencies'].tolist(),
-                        'spectrum': spectrum_result['spectrum_db'].tolist(),
-                        'timestamp': datetime.now().isoformat(),
-                        'sample_rate': self.current_config['sample_rate'],
-                        'center_frequency': self.current_config['center_frequency'],
-                        'fft_size': config.fft_size,
-                        'metadata': {
-                            'gain': self.current_config['gain'],
-                            'demod_mode': self.demod_config['mode'],
-                            'processing_time_ms': processing_time * 1000,
-                            'fps': self.stats['fps'],
-                            'plugin_processing_ms': result.execution_time_ms
+                    try:
+                        # Build spectrum data response
+                        spectrum_data = {
+                            'type': 'spectrum',
+                            'frequencies': spectrum_result['frequencies'].tolist(),
+                            'spectrum': spectrum_result['spectrum_db'].tolist(),
+                            'timestamp': datetime.now().isoformat(),
+                            'sample_rate': self.current_config['sample_rate'],
+                            'center_frequency': self.current_config['center_frequency'],
+                            'fft_size': config.fft_size,
+                            'metadata': {
+                                'gain': self.current_config['gain'],
+                                'demod_mode': self.demod_config['mode'],
+                                'processing_time_ms': processing_time * 1000,
+                                'fps': self.stats['fps'],
+                                'plugin_processing_ms': result.execution_time_ms
+                            }
                         }
-                    }
+                    except Exception as e:
+                        error_handler.log_error(
+                            e,
+                            "Spectrum data formatting",
+                            ErrorSeverity.WARNING
+                        )
+                        return None
                     break
+
+            if spectrum_data is None:
+                # No successful spectrum result - log if this happens frequently
+                logger.debug("No spectrum data in plugin results")
 
             return spectrum_data
 
         except Exception as e:
-            logger.error(f"Error processing spectrum data: {e}")
+            error_handler.log_error(
+                e,
+                "Spectrum data processing",
+                ErrorSeverity.ERROR
+            )
             return None
 
     async def get_audio_data(self) -> Optional[Dict[str, Any]]:
@@ -402,37 +431,87 @@ class WebSDRControllerV2:
             return None
 
     def _acquisition_worker(self):
-        """Background thread for continuous data acquisition"""
+        """
+        Background thread for continuous data acquisition with error recovery
+
+        Features:
+        - Automatic retry on transient errors
+        - Graceful degradation on persistent errors
+        - Error statistics tracking
+        """
         logger.info("Starting SDR acquisition worker (v2.0 with plugin supervisor)")
 
         # Calculate read size for ~100ms chunks
         read_size = int(self.current_config['sample_rate'] * 0.1)
         read_size = (read_size // 1024) * 1024  # Align to 1024 samples
 
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+        total_errors = 0
+
         while self.is_running:
             try:
                 # Read samples from SDR
                 samples = self.sdr.read_samples(read_size)
 
+                # Reset error counter on successful read
+                if consecutive_errors > 0:
+                    logger.info(f"Acquisition recovered after {consecutive_errors} errors")
+                    consecutive_errors = 0
+
                 # Add to processing queue (non-blocking)
                 try:
                     self.data_queue.put_nowait(samples)
                 except:
-                    # Queue full, drop oldest sample
+                    # Queue full, drop oldest sample and retry
                     try:
                         self.data_queue.get_nowait()
                         self.data_queue.put_nowait(samples)
                     except Empty:
+                        # Queue somehow empty, just skip this sample
                         pass
 
                 self.stats['samples_processed'] += len(samples)
 
             except Exception as e:
-                if self.is_running:  # Only log if we're still supposed to be running
-                    logger.error(f"Error in acquisition worker: {e}")
-                break
+                if not self.is_running:
+                    # Expected during shutdown
+                    break
 
-        logger.info("SDR acquisition worker stopped")
+                consecutive_errors += 1
+                total_errors += 1
+
+                # Log error with appropriate severity
+                if consecutive_errors < 3:
+                    error_handler.log_error(
+                        e,
+                        f"SDR acquisition error ({consecutive_errors}/{max_consecutive_errors})",
+                        ErrorSeverity.WARNING
+                    )
+                else:
+                    error_handler.log_error(
+                        e,
+                        f"Persistent SDR acquisition errors ({consecutive_errors}/{max_consecutive_errors})",
+                        ErrorSeverity.ERROR
+                    )
+
+                # Stop if too many consecutive errors
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.critical(
+                        f"Stopping acquisition after {consecutive_errors} consecutive errors "
+                        f"(total errors: {total_errors})"
+                    )
+                    self.is_running = False
+                    break
+
+                # Brief pause before retry
+                time.sleep(0.1)
+
+        logger.info(
+            f"SDR acquisition worker stopped "
+            f"(total samples: {self.stats['samples_processed']}, "
+            f"total errors: {total_errors})"
+        )
 
     def _update_performance_stats(self, processing_time: float):
         """Update performance statistics"""
