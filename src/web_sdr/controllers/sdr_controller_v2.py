@@ -22,6 +22,13 @@ from ..dsp.spectrum_processor import SpectrumProcessor
 from ..dsp.demodulators import AudioDemodulators
 from ..pipeline.plugin_supervisor import PluginSupervisor, PluginResult
 from ..plugins import SpectrumPlugin, WaterfallPlugin, DemodulatorPlugin
+from ..utils.error_handler import (
+    error_handler,
+    handle_errors,
+    HardwareError,
+    ProcessingError,
+    ErrorSeverity
+)
 
 logger = logging.getLogger(__name__)
 

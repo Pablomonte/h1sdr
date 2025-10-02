@@ -23,13 +23,23 @@ import uvicorn
 from .config import config, EXTENDED_RADIO_BANDS, DEMOD_MODES
 from .services.websocket_service import WebSocketManager
 from .controllers.sdr_controller_v2 import WebSDRControllerV2
+from .utils.logging_config import setup_logging, get_logger
+from .utils.error_handler import error_handler
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO if not config.debug else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Setup structured logging (v2.0)
+log_config = setup_logging(
+    log_dir=Path("logs") if config.enable_logging else None,
+    console_level="DEBUG" if config.debug else config.log_level,
+    file_level="DEBUG",
+    enable_json=config.enable_json_logs,
+    component_levels={
+        'controllers.sdr_controller_v2': 'INFO',
+        'pipeline.plugin_supervisor': 'INFO',
+        'plugins': 'INFO',
+        'uvicorn.access': 'WARNING',  # Reduce HTTP access log noise
+    }
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Global instances - v2.0 with plugin supervisor
 websocket_manager = WebSocketManager()

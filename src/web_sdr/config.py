@@ -44,7 +44,12 @@ class WebSDRConfig(BaseSettings):
     # Performance settings
     buffer_size: int = 8192
     worker_threads: int = 2
-    
+
+    # Logging settings (v2.0)
+    enable_logging: bool = True        # Enable file logging
+    log_level: str = "INFO"            # Default log level
+    enable_json_logs: bool = False     # Enable JSON format for log analysis
+
     class Config:
         env_file = ".env"
         env_prefix = "WEBSDR_"
