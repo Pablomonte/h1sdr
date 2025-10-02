@@ -376,50 +376,64 @@ function initializeSpectrumVisualization() {
     let minPower = -80;  // Reducido para mejor visualización con ganancia baja
     let maxPower = -10;  // Ajustado para centrar el rango dinámico
     
-    // WebSocket connections
-    const ws = new WebSocket(`ws://${window.location.host}/ws/spectrum`);
-    const audioWs = new WebSocket(`ws://${window.location.host}/ws/audio`);
-    
-    ws.onopen = () => {
-        console.log('🔗 Spectrum WebSocket connected');
-    };
-    
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        // Debug: Log first message to see structure
-        if (!window.DEBUG_WS_LOGGED) {
-            console.log('🔍 WebSocket message structure:', Object.keys(data));
-            if (data.spectrum) {
-                console.log('🔍 Spectrum array length:', data.spectrum.length);
-                console.log('🔍 Sample spectrum values:', data.spectrum.slice(0, 10));
+    // WebSocket connections using v2.0 RobustWebSocket
+    // Load RobustWebSocket (already included in websocket-manager.js)
+    const ws = new RobustWebSocket(`ws://${window.location.host}/ws/spectrum`, {
+        onOpen: () => {
+            console.log('🔗 Spectrum WebSocket connected (v2.0 auto-reconnect)');
+        },
+
+        onClose: (event) => {
+            console.warn('⚠️ Spectrum WebSocket disconnected, auto-reconnecting...');
+        },
+
+        onError: (error) => {
+            console.error('❌ Spectrum WebSocket error:', error);
+        },
+
+        onMessage: (data) => {
+            // RobustWebSocket automatically parses JSON
+
+            // Debug: Log first message to see structure
+            if (!window.DEBUG_WS_LOGGED) {
+                console.log('🔍 WebSocket message structure:', Object.keys(data));
+                if (data.spectrum) {
+                    console.log('🔍 Spectrum array length:', data.spectrum.length);
+                    console.log('🔍 Sample spectrum values:', data.spectrum.slice(0, 10));
+                }
+                window.DEBUG_WS_LOGGED = true;
             }
-            window.DEBUG_WS_LOGGED = true;
+
+            if (data.type === 'spectrum' && data.spectrum && data.spectrum.length > 0) {
+                drawSpectrum(canvas, data.spectrum);
+
+                // Update waterfall display if available (DISABLED for performance)
+                // if (waterfallDisplay && waterfallDisplay.addSpectrumLine) {
+                //     waterfallDisplay.addSpectrumLine(new Float32Array(data.spectrum));
+                //     waterfallDisplay.render();
+                // }
+            } else if (data.type === 'connection_status') {
+                console.log('📡 WebSocket connection status:', data);
+            } else {
+                console.warn('❌ Unexpected WebSocket message:', data.type, Object.keys(data));
+            }
         }
-        
-        if (data.type === 'spectrum' && data.spectrum && data.spectrum.length > 0) {
-            drawSpectrum(canvas, data.spectrum);
-            
-            // Update waterfall display if available (DISABLED for performance)
-            // if (waterfallDisplay && waterfallDisplay.addSpectrumLine) {
-            //     waterfallDisplay.addSpectrumLine(new Float32Array(data.spectrum));
-            //     waterfallDisplay.render();
-            // }
-        } else if (data.type === 'connection_status') {
-            console.log('📡 WebSocket connection status:', data);
-        } else {
-            console.warn('❌ Unexpected WebSocket message:', data.type, Object.keys(data));
+    });
+
+    // Audio WebSocket with v2.0 auto-reconnect
+    const audioWs = new RobustWebSocket(`ws://${window.location.host}/ws/audio`, {
+        onOpen: () => {
+            console.log('🔊 Audio WebSocket connected (v2.0 auto-reconnect)');
+        },
+
+        onClose: (event) => {
+            console.warn('⚠️ Audio WebSocket disconnected, auto-reconnecting...');
+        },
+
+        onError: (error) => {
+            console.error('❌ Audio WebSocket error:', error);
         }
-    };
-    
-    ws.onerror = (error) => {
-        console.error('❌ Spectrum WebSocket error:', error);
-    };
-    
-    // Audio WebSocket handlers
-    audioWs.onopen = () => {
-        console.log('🔊 Audio WebSocket connected');
-    };
+    });
     
     audioWs.onmessage = (event) => {
         try {
