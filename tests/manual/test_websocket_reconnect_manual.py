@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""
+Manual WebSocket Auto-Reconnect Test
+
+This script helps verify that the WebSocket auto-reconnect functionality
+works correctly by providing step-by-step testing instructions.
+"""
+
+import asyncio
+import sys
+import time
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+print("=" * 70)
+print("H1SDR v2.0 - WebSocket Auto-Reconnect Manual Test")
+print("=" * 70)
+print()
+
+print("This test will guide you through verifying the WebSocket auto-reconnect")
+print("functionality. You'll need to manually start/stop the server.")
+print()
+
+print("SETUP STEPS:")
+print("-" * 70)
+print()
+print("1. Open TWO terminal windows:")
+print("   Terminal 1: Server")
+print("   Terminal 2: This test script")
+print()
+print("2. In Terminal 1, start the server:")
+print("   $ source venv/bin/activate")
+print("   $ python -m src.web_sdr.main_v2")
+print()
+print("3. Wait for server to start (should see 'Application startup complete')")
+print()
+print("4. Open browser:")
+print("   http://localhost:8000")
+print()
+print("5. Open browser Developer Console (F12)")
+print("   - Go to Console tab")
+print("   - You should see:")
+print("     '🔗 Spectrum WebSocket connected (v2.0 auto-reconnect)'")
+print("     '🔊 Audio WebSocket connected (v2.0 auto-reconnect)'")
+print()
+
+input("Press ENTER when server is running and browser is open...")
+print()
+
+print("TEST 1: Initial Connection")
+print("-" * 70)
+print()
+print("Expected behavior:")
+print("  ✓ Server is running")
+print("  ✓ Browser console shows 2 WebSocket connections")
+print("  ✓ No error messages")
+print()
+
+response = input("Does the initial connection work? (y/n): ")
+if response.lower() != 'y':
+    print("❌ Initial connection failed. Debug and retry.")
+    sys.exit(1)
+
+print("✓ Initial connection working")
+print()
+
+print("TEST 2: Server Stop (Auto-Reconnect)")
+print("-" * 70)
+print()
+print("Instructions:")
+print("  1. In Terminal 1, stop the server (Ctrl+C)")
+print("  2. Watch the browser console")
+print()
+print("Expected behavior:")
+print("  ⚠️  Spectrum WebSocket disconnected, auto-reconnecting...")
+print("  ⚠️  Audio WebSocket disconnected, auto-reconnecting...")
+print("  🔄 [WebSocket] Reconnecting in 1.0s... (attempt 1)")
+print("  🔄 [WebSocket] Reconnecting in 2.0s... (attempt 2)")
+print("  🔄 [WebSocket] Reconnecting in 4.0s... (attempt 3)")
+print("  ... (exponential backoff continues)")
+print()
+
+input("Press ENTER after you've stopped the server...")
+print()
+
+print("Waiting 10 seconds to observe reconnection attempts...")
+time.sleep(10)
+print()
+
+response = input("Do you see reconnection attempts in browser console? (y/n): ")
+if response.lower() != 'y':
+    print("❌ Auto-reconnect not working. Check browser console.")
+    sys.exit(1)
+
+print("✓ Auto-reconnect attempts working")
+print()
+
+print("TEST 3: Server Restart (Auto-Recovery)")
+print("-" * 70)
+print()
+print("Instructions:")
+print("  1. In Terminal 1, restart the server:")
+print("     $ python -m src.web_sdr.main_v2")
+print("  2. Watch the browser console")
+print("  3. DO NOT refresh the browser")
+print()
+print("Expected behavior:")
+print("  🔗 [WebSocket] Connected")
+print("  🔗 Spectrum WebSocket connected (v2.0 auto-reconnect)")
+print("  🔊 Audio WebSocket connected (v2.0 auto-reconnect)")
+print("  ✓ Connection restored WITHOUT manual refresh")
+print()
+
+input("Press ENTER after you've restarted the server...")
+print()
+
+print("Waiting 5 seconds for reconnection...")
+time.sleep(5)
+print()
+
+response = input("Did WebSocket reconnect automatically? (y/n): ")
+if response.lower() != 'y':
+    print("❌ Auto-reconnect failed. Check browser console and server logs.")
+    sys.exit(1)
+
+print("✓ Auto-reconnect recovery working")
+print()
+
+print("TEST 4: Start SDR and Verify Data")
+print("-" * 70)
+print()
+print("Instructions:")
+print("  1. In the browser, click 'Start SDR'")
+print("  2. Wait for RTL-SDR to initialize")
+print("  3. Observe spectrum display")
+print()
+print("Expected behavior:")
+print("  ✓ Spectrum display shows live data")
+print("  ✓ Waterfall scrolling (if enabled)")
+print("  ✓ No error messages")
+print()
+
+input("Press ENTER after starting SDR...")
+print()
+
+response = input("Is spectrum data flowing? (y/n): ")
+if response.lower() != 'y':
+    print("❌ Data flow issue. Check server logs and plugin stats.")
+    sys.exit(1)
+
+print("✓ Data flowing correctly")
+print()
+
+print("TEST 5: Reconnect While Streaming")
+print("-" * 70)
+print()
+print("Instructions:")
+print("  1. With SDR still running, stop the server (Ctrl+C)")
+print("  2. Observe browser console (should show reconnection)")
+print("  3. Restart server")
+print("  4. Click 'Start SDR' again")
+print("  5. Verify spectrum resumes")
+print()
+print("Expected behavior:")
+print("  ⚠️  Disconnection detected")
+print("  🔄 Reconnection attempts")
+print("  🔗 Auto-reconnected")
+print("  ✓ Spectrum resumes after starting SDR")
+print()
+
+input("Press ENTER after completing this test...")
+print()
+
+response = input("Did streaming resume after reconnect? (y/n): ")
+if response.lower() != 'y':
+    print("❌ Streaming resume failed. Check plugin supervisor stats.")
+    sys.exit(1)
+
+print("✓ Streaming resume working")
+print()
+
+print("TEST 6: Message Queuing")
+print("-" * 70)
+print()
+print("This test verifies that messages sent while disconnected are queued")
+print("and sent when connection is restored.")
+print()
+print("Instructions:")
+print("  1. Stop the server")
+print("  2. In browser console, try to tune to a frequency:")
+print("     (This would normally send a WebSocket message)")
+print("  3. Restart server")
+print("  4. Observe if queued messages are sent")
+print()
+print("Expected behavior:")
+print("  [WebSocket] Queuing message (not connected)")
+print("  [WebSocket] Connected")
+print("  [WebSocket] Flushing N queued messages...")
+print()
+
+input("Press ENTER to skip this test (optional)...")
+print()
+
+print("=" * 70)
+print("MANUAL TEST SUMMARY")
+print("=" * 70)
+print()
+print("✓ TEST 1: Initial Connection")
+print("✓ TEST 2: Server Stop (Auto-Reconnect)")
+print("✓ TEST 3: Server Restart (Auto-Recovery)")
+print("✓ TEST 4: SDR Data Flow")
+print("✓ TEST 5: Streaming Resume")
+print("⏭  TEST 6: Message Queuing (optional)")
+print()
+print("=" * 70)
+print("ALL TESTS PASSED ✓")
+print("=" * 70)
+print()
+print("The WebSocket auto-reconnect functionality is working correctly!")
+print()
+print("OBSERVATIONS TO NOTE:")
+print("-" * 70)
+print("• Reconnection delay starts at 1s")
+print("• Exponential backoff: 1s → 2s → 4s → 8s → 16s → 30s (max)")
+print("• Message queuing: Up to 100 messages buffered")
+print("• No manual browser refresh needed")
+print("• Works with active SDR streaming")
+print()
+print("NEXT STEPS:")
+print("-" * 70)
+print("1. Run 24-hour stability test")
+print("2. Monitor WebSocket reconnections over time")
+print("3. Check for memory leaks")
+print("4. Verify plugin supervisor stats remain healthy")
+print()
+print("To run 24-hour test:")
+print("  $ python tests/manual/test_24hour_stability.py")
+print()
