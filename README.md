@@ -15,6 +15,7 @@
 ## Overview
 
 H1SDR combines radio astronomy capabilities with general-purpose WebSDR operation. Built with FastAPI backend and modern web frontend, optimized for real-time spectrum analysis and multi-mode demodulation.
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d1e3f8ae-b8dc-49c6-8946-8e3d702256f0" />
 
 ### Key Features
 
