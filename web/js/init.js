@@ -1630,29 +1630,29 @@ function initializeSpectrumControls() {
     // Auto scale button
     if (autoScaleBtn) {
         autoScaleBtn.addEventListener('click', () => {
-            // Reset to optimal values for current gain (15dB)
+            // Reset to optimal values for SDR viewing (110 dB dynamic range)
             if (intensityMin) {
-                intensityMin.value = '-80';
-                intensityMinDisplay.textContent = '-80';
+                intensityMin.value = '-100';
+                intensityMinDisplay.textContent = '-100';
             }
             if (intensityMax) {
-                intensityMax.value = '-10';
-                intensityMaxDisplay.textContent = '-10';
+                intensityMax.value = '10';
+                intensityMaxDisplay.textContent = '10';
             }
-            
+
             // Update global parameters
             if (!window.H1SDR_spectrum) {
                 window.H1SDR_spectrum = {};
             }
-            window.H1SDR_spectrum.minPower = -80;
-            window.H1SDR_spectrum.maxPower = -10;
-            
+            window.H1SDR_spectrum.minPower = -100;
+            window.H1SDR_spectrum.maxPower = 10;
+
             // Update spectrum display immediately
             if (window.spectrumDisplay) {
-                window.spectrumDisplay.setPowerRange(-80, -10);
+                window.spectrumDisplay.setPowerRange(-100, 10);
             }
-            
-            console.log('🔄 Spectrum power range auto-scaled to -80 to -10 dB');
+
+            console.log('🔄 Spectrum power range auto-scaled to -100 to +10 dB (110 dB dynamic range)');
         });
     }
     
