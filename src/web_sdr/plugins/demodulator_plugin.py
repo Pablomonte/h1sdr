@@ -132,49 +132,52 @@ class DemodulatorPlugin(BasePlugin):
             iq_samples: Complex IQ samples
 
         Returns:
-            Audio samples or None
+            Audio samples at audio_sample_rate (already resampled, filtered, AGC applied)
         """
         try:
             # Demodulate based on mode
+            # AudioDemodulators handles: resampling, filtering, AGC, normalization
             if self.mode == 'AM':
-                audio = self.audio_demodulator.am_demodulate(iq_samples, self.sample_rate)
+                audio = self.audio_demodulator.am_demodulate(
+                    iq_samples,
+                    self.sample_rate,
+                    bandwidth=self.bandwidth
+                )
             elif self.mode == 'FM':
+                # Auto-detect deviation: broadcast FM (75kHz) vs narrowband FM (3kHz)
+                deviation = 75000 if self.bandwidth > 10000 else 3000
                 audio = self.audio_demodulator.fm_demodulate(
                     iq_samples,
                     self.sample_rate,
-                    deviation=75000 if self.bandwidth > 100000 else 3000
+                    bandwidth=self.bandwidth,
+                    deviation=deviation
                 )
             elif self.mode == 'USB':
-                audio = self.audio_demodulator.ssb_demodulate(iq_samples, 'usb', self.sample_rate)
+                audio = self.audio_demodulator.ssb_demodulate(
+                    iq_samples,
+                    'usb',
+                    self.sample_rate,
+                    bandwidth=self.bandwidth
+                )
             elif self.mode == 'LSB':
-                audio = self.audio_demodulator.ssb_demodulate(iq_samples, 'lsb', self.sample_rate)
+                audio = self.audio_demodulator.ssb_demodulate(
+                    iq_samples,
+                    'lsb',
+                    self.sample_rate,
+                    bandwidth=self.bandwidth
+                )
             elif self.mode == 'CW':
-                audio = self.audio_demodulator.cw_demodulate(iq_samples, 600, self.sample_rate)
+                # Use narrower bandwidth for CW if not specified
+                cw_bw = self.bandwidth if self.bandwidth < 1000 else 500
+                audio = self.audio_demodulator.cw_demodulate(
+                    iq_samples,
+                    self.sample_rate,
+                    tone_frequency=600,
+                    bandwidth=cw_bw
+                )
             else:
                 self.logger.warning(f"Unknown demod mode: {self.mode}")
                 return None
-
-            # Resample if needed
-            if self.sample_rate != self.audio_sample_rate:
-                from scipy import signal as scipy_signal
-                audio = scipy_signal.resample(
-                    audio,
-                    int(len(audio) * self.audio_sample_rate / self.sample_rate)
-                )
-
-            # Apply bandwidth filter
-            if self.bandwidth < self.audio_sample_rate / 2:
-                from scipy import signal as scipy_signal
-                nyquist = self.audio_sample_rate / 2
-                normalized_cutoff = self.bandwidth / nyquist
-                b, a = scipy_signal.butter(4, normalized_cutoff, btype='low')
-                audio = scipy_signal.filtfilt(b, a, audio)
-
-            # Normalize
-            if len(audio) > 0:
-                max_val = np.max(np.abs(audio))
-                if max_val > 0:
-                    audio = audio / max_val * 0.5  # Prevent clipping
 
             return audio
 

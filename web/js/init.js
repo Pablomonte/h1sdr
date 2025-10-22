@@ -1108,27 +1108,49 @@ function initializeBandwidthControls() {
 // Initialize demodulation controls
 function initializeDemodulationControls() {
     console.log('📻 Initializing demodulation controls...');
-    
+
+    // Support both old button-based and new dropdown interfaces
     const demodButtons = document.querySelectorAll('.demod-btn');
+    const demodSelect = document.getElementById('demod-select');
     const demodDisplay = document.getElementById('demod-display');
-    
+    const bandwidthSlider = document.getElementById('bandwidth-slider');
+    const bandwidthDisplay = document.getElementById('bandwidth-display');
+
     const demodModes = {
         'SPECTRUM': 'Spectrum',
         'AM': 'AM',
-        'FM': 'FM', 
+        'FM': 'FM',
         'USB': 'USB',
         'LSB': 'LSB',
         'CW': 'CW'
     };
-    
-    let currentDemod = 'SPECTRUM';
-    
+
+    // Default bandwidth settings per mode (Hz)
+    const defaultBandwidths = {
+        'SPECTRUM': 0,
+        'AM': 6000,
+        'FM': 15000,
+        'USB': 2700,
+        'LSB': 2700,
+        'CW': 500
+    };
+
+    let currentDemod = 'FM'; // Default to FM
+    let currentBandwidth = 15000; // Default 15 kHz
+
+    function formatBandwidth(hz) {
+        if (hz >= 1000) {
+            return `${(hz / 1000).toFixed(1)}k`;
+        }
+        return `${hz}`;
+    }
+
     function updateDemodDisplay(mode) {
         if (demodDisplay) {
             demodDisplay.textContent = demodModes[mode] || mode;
         }
-        
-        // Update button states
+
+        // Update button states (old interface)
         demodButtons.forEach(btn => {
             if (btn.dataset.mode === mode) {
                 btn.classList.add('active');
@@ -1136,26 +1158,52 @@ function initializeDemodulationControls() {
                 btn.classList.remove('active');
             }
         });
+
+        // Update dropdown (new interface)
+        if (demodSelect && demodSelect.value !== mode) {
+            demodSelect.value = mode;
+        }
     }
-    
-    function setDemodulation(mode) {
+
+    function updateBandwidthForMode(mode) {
+        if (mode in defaultBandwidths) {
+            currentBandwidth = defaultBandwidths[mode];
+            if (bandwidthSlider) {
+                bandwidthSlider.value = currentBandwidth;
+                if (bandwidthDisplay) {
+                    bandwidthDisplay.textContent = formatBandwidth(currentBandwidth);
+                }
+            }
+        }
+    }
+
+    function setDemodulation(mode, bandwidth = null) {
         if (mode in demodModes) {
             currentDemod = mode;
+
+            // Update bandwidth to default for this mode if not specified
+            if (bandwidth === null) {
+                updateBandwidthForMode(mode);
+                bandwidth = currentBandwidth;
+            } else {
+                currentBandwidth = bandwidth;
+            }
+
             updateDemodDisplay(currentDemod);
-            
-            // Send demodulation mode to SDR via API
-            updateSDRDemodulation(currentDemod);
-            
+
+            // Send demodulation mode to SDR via API with bandwidth
+            updateSDRDemodulation(currentDemod, bandwidth);
+
             // Update audio controls state
             if (typeof updateAudioControlsState === 'function') {
                 updateAudioControlsState();
             }
-            
-            console.log(`📻 Demodulation set to: ${demodModes[mode]}`);
+
+            console.log(`📻 Demodulation set to: ${demodModes[mode]} @ ${formatBandwidth(bandwidth)} Hz`);
         }
     }
-    
-    // Demodulation buttons
+
+    // Demodulation buttons (old interface)
     demodButtons.forEach(btn => {
         const mode = btn.dataset.mode;
         if (mode) {
@@ -1164,10 +1212,46 @@ function initializeDemodulationControls() {
             });
         }
     });
-    
+
+    // Demodulation dropdown (new interface)
+    if (demodSelect) {
+        demodSelect.addEventListener('change', (e) => {
+            setDemodulation(e.target.value);
+        });
+    }
+
+    // Bandwidth slider handler
+    if (bandwidthSlider) {
+        bandwidthSlider.addEventListener('input', (e) => {
+            const bandwidth = parseInt(e.target.value);
+            currentBandwidth = bandwidth;
+
+            if (bandwidthDisplay) {
+                bandwidthDisplay.textContent = formatBandwidth(bandwidth);
+            }
+        });
+
+        // Send bandwidth update when slider is released (not during drag)
+        bandwidthSlider.addEventListener('change', (e) => {
+            const bandwidth = parseInt(e.target.value);
+            console.log(`📻 Bandwidth changed to ${formatBandwidth(bandwidth)} Hz`);
+
+            // Update demodulation with new bandwidth
+            if (currentDemod !== 'SPECTRUM') {
+                updateSDRDemodulation(currentDemod, bandwidth);
+            }
+        });
+
+        // Initialize bandwidth display
+        if (bandwidthDisplay) {
+            bandwidthDisplay.textContent = formatBandwidth(currentBandwidth);
+        }
+    }
+
     // Initialize with current mode
     updateDemodDisplay(currentDemod);
-    
+    updateBandwidthForMode(currentDemod);
+
     console.log('✅ Demodulation controls initialized');
 }
 
@@ -1251,33 +1335,52 @@ async function updateSDRBandwidth(sampleRate) {
     }
 }
 
-async function updateSDRDemodulation(mode) {
+async function updateSDRDemodulation(mode, bandwidth = null) {
     try {
-        const response = await fetch('/api/sdr/demod', {
+        // Get current bandwidth from slider if not provided
+        if (bandwidth === null) {
+            const bandwidthSlider = document.getElementById('bandwidth-slider');
+            if (bandwidthSlider) {
+                bandwidth = parseInt(bandwidthSlider.value);
+            }
+        }
+
+        // Build query parameters
+        let url = `/api/demod/set?mode=${encodeURIComponent(mode)}`;
+        if (bandwidth !== null) {
+            url += `&bandwidth=${bandwidth}`;
+        }
+
+        const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: mode })
+            headers: { 'Content-Type': 'application/json' }
         });
-        
+
         if (response.ok) {
             const result = await response.json();
-            console.log(`📻 Demodulation set to ${mode}`);
-            
+            console.log(`📻 Demodulation set to ${mode}${bandwidth ? ` @ ${bandwidth} Hz` : ''}`);
+
             // Start/stop audio based on demodulation mode
             if (window.H1SDR_spectrum && window.H1SDR_spectrum.audioService) {
                 if (mode === 'SPECTRUM') {
                     window.H1SDR_spectrum.audioService.stopAudio();
                 } else {
-                    window.H1SDR_spectrum.audioService.startAudio();
+                    // Auto-start audio when switching to demod mode
+                    window.H1SDR_spectrum.audioService.startAudio().catch(err => {
+                        console.log('Audio auto-start failed (may need user interaction):', err.message);
+                    });
                 }
             }
-            
+
             return result;
         } else {
-            console.error('Failed to set demodulation:', response.statusText);
+            const errorText = await response.text();
+            console.error('Failed to set demodulation:', response.statusText, errorText);
+            showNotification(`Failed to set demodulation: ${response.statusText}`, 'error');
         }
     } catch (error) {
         console.error('Error setting demodulation:', error);
+        showNotification(`Error: ${error.message}`, 'error');
     }
 }
 
