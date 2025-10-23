@@ -57,7 +57,7 @@ RTL-SDR Hardware → FastAPI Backend → WebSocket → Web Frontend
 
 ### Installation
 ```bash
-git clone https://github.com/usuario/h1sdr.git
+git clone https://github.com/Pablomonte/h1sdr.git
 cd h1sdr
 
 python3 -m venv venv
@@ -219,7 +219,7 @@ rtl_test -t
 
 ### Setup
 ```bash
-git clone https://github.com/yourusername/h1sdr.git
+git clone https://github.com/Pablomonte/h1sdr.git
 cd h1sdr
 python3 -m venv venv
 source venv/bin/activate
