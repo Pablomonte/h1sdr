@@ -59,7 +59,8 @@ class WebSDRController:
         
         # Audio buffering for smooth streaming
         self.audio_buffer = []
-        self.target_audio_chunk_size = config.audio_sample_rate // 10  # 100ms chunks
+        # Optimal chunk size for smooth audio (100ms for better continuity)
+        self.target_audio_chunk_size = config.audio_sample_rate // 10  # 100ms chunks = 4800 samples
         
         # Performance tracking
         self.stats = {
@@ -281,10 +282,19 @@ class WebSDRController:
             # Generate audio data if needed
             if self.demod_config['mode'] != 'SPECTRUM':
                 audio_samples = await self._process_audio(samples)
-                if audio_samples is not None:
+                if audio_samples is not None and len(audio_samples) > 0:
+                    # Log audio generation rate periodically
+                    logger.debug(f"Audio samples generated: {len(audio_samples)}, mode: {self.demod_config['mode']}")
+
                     # Add to audio buffer for accumulation
-                    self.audio_buffer.extend(audio_samples)
-                    
+                    # Convert numpy array to Python list to avoid JSON serialization issues
+                    if hasattr(audio_samples, 'tolist'):
+                        self.audio_buffer.extend(audio_samples.tolist())
+                    else:
+                        self.audio_buffer.extend(list(audio_samples))
+
+                    logger.debug(f"Audio buffer size: {len(self.audio_buffer)}/{self.target_audio_chunk_size}")
+
                     # Send when we have enough samples for a smooth chunk
                     if len(self.audio_buffer) >= self.target_audio_chunk_size:
                         chunk_samples = self.audio_buffer[:self.target_audio_chunk_size]
@@ -292,7 +302,7 @@ class WebSDRController:
                         
                         self.audio_data = {
                             'type': 'audio',
-                            'samples': chunk_samples,
+                            'samples': chunk_samples,  # Already a Python list
                             'sample_rate': config.audio_sample_rate,
                             'timestamp': datetime.now().isoformat(),
                             'mode': self.demod_config['mode'],
@@ -357,7 +367,7 @@ class WebSDRController:
         try:
             mode = self.demod_config['mode']
             sample_rate = self.current_config['sample_rate']
-            
+
             # Demodulate based on mode
             if mode == 'AM':
                 audio = self.audio_demodulator.am_demodulate(samples, sample_rate)
@@ -372,14 +382,25 @@ class WebSDRController:
                 audio = self.audio_demodulator.cw_demodulate(samples, tone_freq, sample_rate)
             else:
                 return None
-            
+
             # Resample to audio sample rate if needed
+            # Use a more efficient resampling for the large downsampling ratio
             if sample_rate != config.audio_sample_rate:
                 from scipy import signal as scipy_signal
-                audio = scipy_signal.resample(
-                    audio, 
-                    int(len(audio) * config.audio_sample_rate / sample_rate)
-                )
+                # Calculate the exact resampling ratio
+                resample_ratio = config.audio_sample_rate / sample_rate
+                # For large downsampling ratios, use decimate for better quality
+                if resample_ratio < 0.1:  # If downsampling by more than 10x
+                    # First apply anti-aliasing filter and decimate
+                    decimation_factor = int(sample_rate / config.audio_sample_rate)
+                    if decimation_factor > 1:
+                        audio = scipy_signal.decimate(audio, decimation_factor, zero_phase=True)
+                else:
+                    # Use regular resampling for smaller ratios
+                    audio = scipy_signal.resample(
+                        audio,
+                        int(len(audio) * config.audio_sample_rate / sample_rate)
+                    )
             
             # Apply bandwidth limiting
             bandwidth = self.demod_config.get('bandwidth', 3000)  # Default 3kHz
